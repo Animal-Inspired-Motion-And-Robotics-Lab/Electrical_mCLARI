@@ -1,0 +1,19 @@
+Importer Log Report
+Project : Adafruit PyGamer.Library.PrjPcb
+
+Section : Analyze Document - C:\Users\parke\Documents\GitHub\Electrical_mCLARI\test-hardware\reference-designs\Adafruit-PyGamer-PCB-master\Adafruit PyGamer.lbr
+    Analyzing data of C:\Users\parke\Documents\GitHub\Electrical_mCLARI\test-hardware\reference-designs\Adafruit-PyGamer-PCB-master\Adafruit PyGamer.lbr
+    Load settings
+    Load layers 160
+    Load library
+    Load Library library
+    Load Library ""
+    Load Packages 205
+    ERROR: Unhandled typedimension
+    ERROR: Unhandled typedimension
+    ERROR: Unhandled typedimension
+    ERROR: Unhandled typedimension
+    ERROR: Unhandled typedimension
+    Load Symbols 46
+    Load DeviceSets 44
+EndSection
