@@ -26,6 +26,7 @@ uint16_t dac_read_reg(uint8_t addr);
 //void dac_write_all(uint16_t value);
 void dac_print(void);
 void dac_set_output(uint8_t channel, uint16_t value);
+void dac_clear_output(void);
 
 // hv functions 
 void hv_disable(void);
@@ -40,10 +41,10 @@ Adafruit_MCP23X17 mcp_hv;
 
 // leg waveform objects
 
-WaveGenerator leg_1(2,200,100,90,500);
-WaveGenerator leg_2(2,200,100,90,500);
-WaveGenerator leg_3(2,200,100,90,500);
-WaveGenerator leg_4(2,200,100,90,500);
+WaveGenerator leg_1(5,200,100,90,500);
+WaveGenerator leg_2(5,200,100,90,500);
+WaveGenerator leg_3(5,200,100,90,500);
+WaveGenerator leg_4(5,200,100,90,500);
 
 // leg current lift/swing variables
 
@@ -56,11 +57,14 @@ uint16_t leg_3_swing = 0;
 uint16_t leg_4_lift = 0;
 uint16_t leg_4_swing = 0;
 
-// loop control timers
-elapsedMillis loopTimeElapsed = 0;
-uint32_t loop_period      = 5; // ms   
+// loop control variables
+elapsedMillis loopTimeElapsed, runTimeElapsed = 0;
+uint32_t loop_period      = 10; // ms   
+uint32_t run_time         = 5000; // ms 
 
-
+bool robot_enabled = true;
+bool ramp_up_finished = false;
+uint16_t ramp_length = 500; // ms
 // NeoPixel Objects
 
 #define WIRE Wire
@@ -120,6 +124,19 @@ void setup() {
   dac_write_reg(HV_DAC_CONFIG, 0x0000);   // no CRC, DO enabled, all DACs enabled
   dac_write_reg(HV_DAC_GAIN, 0x00FF);     // set gain to 1
   dac_write_reg(HV_DAC_TRIGGER, 0x0008);  // set trigger to 0
+  dac_clear_output();
+
+  // intialize each leg control object
+  leg_1.begin();
+  leg_2.begin();
+  leg_3.begin();
+  leg_4.begin();
+
+  // set mode to lift/swing
+  leg_1.setMode(0);
+  leg_2.setMode(0);
+  leg_3.setMode(0);
+  leg_4.setMode(0);
 
 
 }
@@ -129,11 +146,50 @@ void loop() {
 // run code here
   if(loopTimeElapsed > loop_period)
   {
+    Serial.println('running leg controller now');
+    Serial.print(leg_1_lift);
+    Serial.print(" ");
+    Serial.print(leg_1_swing);
     // reset loop timer
     loopTimeElapsed = 0;
 
-    //execute waveform and RICK reading code here!
+    if(robot_enabled)
+    {
+      // set flag that we are ramped up
+      if(!ramp_up_finished)
+      {
+        leg_1.startRamp(true, ramp_length);
+        leg_2.startRamp(true, ramp_length);
+        leg_3.startRamp(true, ramp_length);
+        leg_4.startRamp(true, ramp_length);
 
+        // ramp up the voltages here
+        while(!ramp_up_finished)
+        {
+          leg_1.run(&leg_1_lift, &leg_1_swing, true);
+          leg_2.run(&leg_2_lift, &leg_2_swing, true);
+          leg_3.run(&leg_3_lift, &leg_3_swing, true);
+          leg_4.run(&leg_4_lift, &leg_4_swing, true);
+        }
+        // 
+        ramp_up_finished = true;
+      }
+      else
+      {
+        //execute waveform and RICK reading code here!
+        leg_1.run(&leg_1_lift, &leg_1_swing, true);
+        leg_2.run(&leg_2_lift, &leg_2_swing, true);
+        leg_3.run(&leg_3_lift, &leg_3_swing, true);
+        leg_4.run(&leg_4_lift, &leg_4_swing, true);
+      }
+    }
+    else
+    {
+      // disable the high voltage converter
+      hv_disable();
+      // make sure the ramp flag is reset for next time
+      ramp_up_finished = false;
+    }
 
   }
 
@@ -246,3 +302,14 @@ void dac_set_output(uint8_t channel, uint16_t value)
   mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
 }
 
+void dac_clear_output(void);
+{
+  dac_set_output(0, 0x0000);
+  dac_set_output(1, 0x0000);
+  dac_set_output(2, 0x0000);
+  dac_set_output(3, 0x0000);
+  dac_set_output(4, 0x0000);
+  dac_set_output(5, 0x0000);
+  dac_set_output(6, 0x0000);
+  dac_set_output(7, 0x0000);
+}
