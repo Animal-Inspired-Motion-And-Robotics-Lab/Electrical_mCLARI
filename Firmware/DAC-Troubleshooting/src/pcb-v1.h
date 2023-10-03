@@ -86,20 +86,22 @@
 #define HV_PWR_MONITOR_ADDR 0x48
 
 // HV DAC register map
-#define HV_DAC_DEVICE_ID  0x01
-#define HV_DAC_SYNC       0x02
-#define HV_DAC_GAIN       0x03
-#define HV_DAC_TRIGGER    0x04
-#define HV_DAC_BRDCAST    0x05
-#define HV_DAC_STATUS     0x06
-#define HV_DAC_DAC0       0x08
-#define HV_DAC_DAC1       0x09
-#define HV_DAC_DAC2       0x0A
-#define HV_DAC_DAC3       0x0B
-#define HV_DAC_DAC4       0x0C
-#define HV_DAC_DAC5       0x0D
-#define HV_DAC_DAC6       0x0E
-#define HV_DAC_DAC7       0x0F
+#define HV_DAC_NOP              0x00
+#define HV_DAC_DEVICE_ID        0x01
+#define HV_DAC_SYNC             0x02
+#define HV_DAC_CONFIG           0x03
+#define HV_DAC_GAIN             0x04
+#define HV_DAC_TRIGGER          0x05
+#define HV_DAC_BRDCAST          0x06
+#define HV_DAC_DAC_BASE_ADDR    0x08
+#define HV_DAC_DAC0             0x08
+#define HV_DAC_DAC1             0x09
+#define HV_DAC_DAC2             0x0A
+#define HV_DAC_DAC3             0x0B
+#define HV_DAC_DAC4             0x0C
+#define HV_DAC_DAC5             0x0D
+#define HV_DAC_DAC6             0x0E
+#define HV_DAC_DAC7             0x0F
 
 // Power + Control devices
 

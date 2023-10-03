@@ -3,6 +3,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <elapsedMillis.h>
 
 // put function declarations here:
 
@@ -11,18 +12,20 @@
 //-------------------------------------------------------------------------------------------
 
 #include "pcb-v1.h"
+#include "WaveGenerator.h"
 
 // led functions
 uint32_t Wheel(byte WheelPos);
 void rainbowCycle(uint8_t wait);
 
 // hv dac functions
-void dac_write(uint8_t channel, uint16_t value);
-uint16_t dac_read(uint8_t addr);
+void dac_write_reg(uint8_t channel, uint16_t value);
+uint16_t dac_read_reg(uint8_t addr);
 
-void dac_clear_all(void);
-void dac_write_all(uint16_t value);
+//void dac_clear_all(void);
+//void dac_write_all(uint16_t value);
 void dac_print(void);
+void dac_set_output(uint8_t channel, uint16_t value);
 
 // hv functions 
 void hv_disable(void);
@@ -35,35 +38,41 @@ Adafruit_MCP23X17 mcp_top;
 Adafruit_MCP23X17 mcp_bottom;
 Adafruit_MCP23X17 mcp_hv;
 
-#define WIRE Wire
+// leg waveform objects
 
+WaveGenerator leg_1(2,200,100,90,500);
+WaveGenerator leg_2(2,200,100,90,500);
+WaveGenerator leg_3(2,200,100,90,500);
+WaveGenerator leg_4(2,200,100,90,500);
+
+// leg current lift/swing variables
+
+uint16_t leg_1_lift = 0;
+uint16_t leg_1_swing = 0;
+uint16_t leg_2_lift = 0;
+uint16_t leg_2_swing = 0;
+uint16_t leg_3_lift = 0;
+uint16_t leg_3_swing = 0;
+uint16_t leg_4_lift = 0;
+uint16_t leg_4_swing = 0;
+
+// loop control timers
+elapsedMillis loopTimeElapsed = 0;
+uint32_t loop_period      = 5; // ms   
+
+
+// NeoPixel Objects
+
+#define WIRE Wire
 // Which pin on the Arduino is connected to the NeoPixels?
 // On a Trinket or Gemma we suggest changing this to 1:
 #define LED_PIN MCU_NEOPIXEL  
-
 // How many NeoPixels are attached to the Arduino?
 #define LED_COUNT  16
-
 // NeoPixel brightness, 0 (min) to 255 (max)
 #define BRIGHTNESS 50 // Set BRIGHTNESS to about 1/5 (max = 255)
-
 // Declare our NeoPixel strip object:
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
-// Argument 1 = Number of pixels in NeoPixel strip
-// Argument 2 = Arduino pin number (most are valid)
-// Argument 3 = Pixel type flags, add together as needed:
-//   NEO_KHZ800  800 KHz bitstream (most NeoPixel products w/WS2812 LEDs)
-//   NEO_KHZ400  400 KHz (classic 'v1' (not v2) FLORA pixels, WS2811 drivers)
-//   NEO_GRB     Pixels are wired for GRB bitstream (most NeoPixel products)
-//   NEO_RGB     Pixels are wired for RGB bitstream (v1 FLORA pixels, not v2)
-//   NEO_RGBW    Pixels are wired for RGBW bitstream (NeoPixel RGBW products)
-
-// Fill strip pixels one after another with a color. Strip is NOT cleared
-// first; anything there will be covered pixel by pixel. Pass in color
-// (as a single 'packed' 32-bit value, which you can get by calling
-// strip.Color(red, green, blue) as shown in the loop() function above),
-// and a delay time (in milliseconds) between pixels.
-// Fill the dots one after the other with a color
 
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
@@ -103,25 +112,31 @@ void setup() {
   mcp_bottom.pinMode(DAC_CS, OUTPUT);
 
   // set DAC CS to output
-  //mcp_hv.pinMode(HV_DAC_CS_0, OUTPUT);
+  mcp_hv.pinMode(HV_DAC_CS_0, OUTPUT);
   // clear output of all channels
-  dac_clear_all();
+  //dac_clear_all();
   //dac_write(HV_DAC_BRDCAST, 0x0FFF);  // update all output registers
+  dac_write_reg(HV_DAC_SYNC, 0x0000);     // set SYNC to 0
+  dac_write_reg(HV_DAC_CONFIG, 0x0000);   // no CRC, DO enabled, all DACs enabled
+  dac_write_reg(HV_DAC_GAIN, 0x00FF);     // set gain to 1
+  dac_write_reg(HV_DAC_TRIGGER, 0x0008);  // set trigger to 0
+
+
 }
 
 void loop() {
 
-  // //rainbow(20);
-  rainbowCycle(20);
+// run code here
+  if(loopTimeElapsed > loop_period)
+  {
+    // reset loop timer
+    loopTimeElapsed = 0;
 
-  // // write to DAC and read back values
+    //execute waveform and RICK reading code here!
 
-  delay(100);
-  dac_write(HV_DAC_DAC7, 0x0FFF);
-  delay(100);
-  dac_write(HV_DAC_DAC7, 0x0000);
-  Serial.println(dac_read(HV_DAC_DEVICE_ID));
-  //dac_print();
+
+  }
+
 
 }
 
@@ -130,7 +145,7 @@ void hv_enable(void)
   mcp_hv.digitalWrite(HV_CP_EN_0, HIGH);
 
   mcp_hv.digitalWrite(HV_CS_0, LOW);
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
   SPI.transfer16(0x00F4);
   //SPI.transfer16(0x00E4);
   SPI.endTransaction();
@@ -145,7 +160,7 @@ void hv_disable(void)
 
   // enable the DC-DC converter
   mcp_hv.digitalWrite(HV_CS_0, LOW);
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
   //SPI.transfer16(0x00F4);
   //SPI.transfer16(0x00E4);
   SPI.transfer16(0x00FA); // shutdown converter
@@ -158,25 +173,24 @@ void dac_print(void)
 {
   Serial.println("DAC Registers:");
   Serial.print("Device ID: ");
-  Serial.println(dac_read(0x00));
+  Serial.println(dac_read_reg(HV_DAC_DEVICE_ID));
   Serial.print("Sync: ");
-  Serial.println(dac_read(HV_DAC_SYNC));
+  Serial.println(dac_read_reg(HV_DAC_SYNC));
   Serial.print("Gain: ");
-  Serial.println(dac_read(HV_DAC_GAIN));
+  Serial.println(dac_read_reg(HV_DAC_GAIN));
   Serial.print("Trigger: ");
-  Serial.println(dac_read(HV_DAC_TRIGGER));
+  Serial.println(dac_read_reg(HV_DAC_TRIGGER));
   Serial.print("Broadcast: ");
-  Serial.println(dac_read(HV_DAC_BRDCAST));
-  Serial.print("Status: ");
-  Serial.println(dac_read(HV_DAC_STATUS));
+  Serial.println(dac_read_reg(HV_DAC_BRDCAST));
 }
 
-void dac_write(uint8_t addr, uint16_t value)
+void dac_write_reg(uint8_t addr, uint16_t value)
 {
   uint16_t dac_value = 0;
   uint8_t dac_cmd = 0;
 
-  dac_value = value & 0x0FFF;
+  // pass the register value directly to DAC
+  dac_value = value;
   dac_cmd = 0x0F & (addr);
 
   Serial.print("DAC write command: ");
@@ -184,7 +198,7 @@ void dac_write(uint8_t addr, uint16_t value)
 
   mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
   //mcp_bottom.digitalWrite(DAC_CS, LOW);
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
   SPI.transfer(dac_cmd);
   SPI.transfer16(dac_value);
   SPI.endTransaction();
@@ -192,7 +206,7 @@ void dac_write(uint8_t addr, uint16_t value)
   mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
 }
 
-uint16_t dac_read(uint8_t addr)
+uint16_t dac_read_reg(uint8_t addr)
 {
 
   uint16_t dac_value = 0;
@@ -206,7 +220,7 @@ uint16_t dac_read(uint8_t addr)
   // send the dac command and read back the value
   mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
   //mcp_bottom.digitalWrite(DAC_CS, LOW);
-  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
   SPI.transfer(dac_cmd);
   dac_value = SPI.transfer16(0x0000);
   SPI.endTransaction();
@@ -217,55 +231,18 @@ uint16_t dac_read(uint8_t addr)
 
 }
 
-void dac_clear_all(void)
+void dac_set_output(uint8_t channel, uint16_t value)
 {
-  dac_write(HV_DAC_DAC0, 0);
-  dac_write(HV_DAC_DAC1, 0);
-  dac_write(HV_DAC_DAC2, 0);
-  dac_write(HV_DAC_DAC3, 0);
-  dac_write(HV_DAC_DAC4, 0);
-  dac_write(HV_DAC_DAC5, 0);
-  dac_write(HV_DAC_DAC6, 0);
-  dac_write(HV_DAC_DAC7, 0);
+  uint16_t dac_value = 0x0FFF & value;
+
+  mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
+  //mcp_bottom.digitalWrite(DAC_CS, LOW);
+  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
+  SPI.transfer(channel);
+  //SPI.transfer16(dac_value);
+  SPI.transfer16(dac_value);
+  SPI.endTransaction();
+  //mcp_bottom.digitalWrite(DAC_CS, HIGH);
+  mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
 }
 
-void dac_write_all(uint16_t value)
-{
-  dac_write(HV_DAC_DAC0, value);
-  dac_write(HV_DAC_DAC1, value);
-  dac_write(HV_DAC_DAC2, value);
-  dac_write(HV_DAC_DAC3, value);
-  dac_write(HV_DAC_DAC4, value);
-  dac_write(HV_DAC_DAC5, value);
-  dac_write(HV_DAC_DAC6, value);
-  dac_write(HV_DAC_DAC7, value);
-}
-
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
-
-// Slightly different, this makes the rainbow equally distributed throughout
-void rainbowCycle(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
-    }
-    strip.show();
-    delay(wait);
-  }
-}
