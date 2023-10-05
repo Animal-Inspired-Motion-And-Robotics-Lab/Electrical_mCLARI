@@ -42,7 +42,7 @@ Adafruit_MCP23X17 mcp_hv;
 #define LED_PIN MCU_NEOPIXEL  
 
 // How many NeoPixels are attached to the Arduino?
-#define LED_COUNT  16
+#define LED_COUNT  55
 
 // NeoPixel brightness, 0 (min) to 255 (max)
 #define BRIGHTNESS 50 // Set BRIGHTNESS to about 1/5 (max = 255)
@@ -76,52 +76,21 @@ void setup() {
   SPI.begin();
   strip.begin();
   strip.setBrightness(50);
+
+  // initialize the mcp23017
+  for(int i=0;i<LED_COUNT;i++)
+  {
+        strip.setPixelColor(i,255,255,96);
+  }
+
   strip.show(); // Initialize all pixels to 'off'
 
-  Serial.begin(9600);
-  Serial.println("MCP23xxx Combo Test!");
 
-  // initialize the MCP23017 pin expander on all boards
-  mcp_bottom.begin_I2C(GPIO_BOTTOM_ADDR);
-  mcp_top.begin_I2C(GPIO_TOP_ADDR);
-  mcp_hv.begin_I2C(HV_GPIO_ADDR);
-
-  // turn on the high voltage board 
-  mcp_bottom.pinMode(BRD_ENABLE_1, OUTPUT);
-  mcp_bottom.digitalWrite(BRD_ENABLE_1, HIGH);
-  // enable the power monitor on the PCB V1
-  mcp_bottom.pinMode(PWR_SHDN_L, OUTPUT);
-  mcp_bottom.digitalWrite(PWR_SHDN_L, HIGH);
-
-  // enable the HV boost converter charge pump
-  //mcp_hv.pinMode(HV_CP_EN_0, OUTPUT);
-  // make sure the HV boost converter is disabled
-  //mcp_hv.pinMode(HV_CS_0, OUTPUT);
-  //hv_disable();
-
-  //
-  mcp_bottom.pinMode(DAC_CS, OUTPUT);
-
-  // set DAC CS to output
-  //mcp_hv.pinMode(HV_DAC_CS_0, OUTPUT);
-  // clear output of all channels
-  dac_clear_all();
-  //dac_write(HV_DAC_BRDCAST, 0x0FFF);  // update all output registers
 }
 
 void loop() {
 
   // //rainbow(20);
-  rainbowCycle(20);
-
-  // // write to DAC and read back values
-
-  delay(100);
-  dac_write(HV_DAC_DAC7, 0x0FFF);
-  delay(100);
-  dac_write(HV_DAC_DAC7, 0x0000);
-  Serial.println(dac_read(HV_DAC_DEVICE_ID));
-  //dac_print();
 
 }
 

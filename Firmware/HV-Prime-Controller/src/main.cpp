@@ -4,7 +4,7 @@
 #include <Wire.h>
 #include <SPI.h>
 #include <elapsedMillis.h>
-
+#include <SerialCommand.h>
 // put function declarations here:
 
 //-------------------------------------------------------------------------------------------
@@ -12,6 +12,7 @@
 //-------------------------------------------------------------------------------------------
 
 #include "pcb-v1.h"
+#include "hv-prime.h"
 #include "WaveGenerator.h"
 
 // led functions
@@ -32,6 +33,14 @@ void dac_clear_output(void);
 void hv_disable(void);
 void hv_enable(void);
 
+// command functions
+SerialCommand serialCmd;
+
+bool robot_enabled = false;
+
+void disable_robot(void);
+void enable_robot(void);
+void help(void);
 // NeoPixel test program showing use of the WHITE channel for RGBW
 // pixels only (won't look correct on regular RGB NeoPixel strips).
 
@@ -41,10 +50,10 @@ Adafruit_MCP23X17 mcp_hv;
 
 // leg waveform objects
 
-WaveGenerator leg_1(1,200,100,90,500);
-WaveGenerator leg_2(1,200,100,90,500);
-WaveGenerator leg_3(1,200,100,90,500);
-WaveGenerator leg_4(1,200,100,90,500);
+WaveGenerator leg_1(5,200,100,90,500);
+WaveGenerator leg_2(5,200,100,90,500);
+WaveGenerator leg_3(5,200,100,90,500);
+WaveGenerator leg_4(5,200,100,90,500);
 
 // leg current lift/swing variables
 
@@ -58,14 +67,16 @@ uint16_t leg_4_lift = 0;
 uint16_t leg_4_swing = 0;
 
 // loop control variables
-elapsedMillis loopTimeElapsed, runTimeElapsed = 0;
+elapsedMillis loopTimeElapsed = 0;
+elapsedMillis runTimeElapsed = 0;
 uint32_t loop_period      = 1; // ms   
 uint32_t run_time         = 5000; // ms 
 
-bool robot_enabled = true;
 bool ramp_up_finished = false;
 uint16_t ramp_length = 500; // ms
 // NeoPixel Objects
+
+bool first_time = true;
 
 #define WIRE Wire
 // Which pin on the Arduino is connected to the NeoPixels?
@@ -77,6 +88,7 @@ uint16_t ramp_length = 500; // ms
 #define BRIGHTNESS 50 // Set BRIGHTNESS to about 1/5 (max = 255)
 // Declare our NeoPixel strip object:
 Adafruit_NeoPixel strip(LED_COUNT, LED_PIN, NEO_RGB + NEO_KHZ800);
+
 
 void setup() {
   // This is for Trinket 5V 16MHz, you can remove these three lines if you are not using a Trinket
@@ -91,8 +103,7 @@ void setup() {
   strip.setBrightness(50);
   strip.show(); // Initialize all pixels to 'off'
 
-  Serial.begin(9600);
-  Serial.println("MCP23xxx Combo Test!");
+  Serial.begin(115200);
 
   // initialize the MCP23017 pin expander on all boards
   mcp_bottom.begin_I2C(GPIO_BOTTOM_ADDR);
@@ -101,30 +112,35 @@ void setup() {
 
   // turn on the high voltage board 
   mcp_bottom.pinMode(BRD_ENABLE_1, OUTPUT);
+  mcp_bottom.digitalWrite(BRD_ENABLE_1, LOW);
+  delay(1000);
   mcp_bottom.digitalWrite(BRD_ENABLE_1, HIGH);
   // enable the power monitor on the PCB V1
   mcp_bottom.pinMode(PWR_SHDN_L, OUTPUT);
   mcp_bottom.digitalWrite(PWR_SHDN_L, HIGH);
 
   // enable the HV boost converter charge pump
-  //mcp_hv.pinMode(HV_CP_EN_0, OUTPUT);
+  mcp_hv.pinMode(HV_CP_EN_0, OUTPUT);
+  mcp_hv.digitalWrite(HV_CP_EN_0, LOW);
   // make sure the HV boost converter is disabled
-  //mcp_hv.pinMode(HV_CS_0, OUTPUT);
+  mcp_hv.pinMode(HV_CS_0, OUTPUT);
+  mcp_hv.digitalWrite(HV_CS_0, HIGH);
   //hv_disable();
-
+  mcp_hv.pinMode(HV_ADC_CS, OUTPUT);
+  mcp_hv.digitalWrite(HV_ADC_CS, HIGH);
   //
   mcp_bottom.pinMode(DAC_CS, OUTPUT);
+  mcp_bottom.digitalWrite(DAC_CS, HIGH);
 
   // set DAC CS to output
   mcp_hv.pinMode(HV_DAC_CS_0, OUTPUT);
+  mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
   // clear output of all channels
-  //dac_clear_all();
-  //dac_write(HV_DAC_BRDCAST, 0x0FFF);  // update all output registers
-  dac_write_reg(HV_DAC_SYNC, 0x0000);     // set SYNC to 0
-  dac_write_reg(HV_DAC_CONFIG, 0x0000);   // no CRC, DO enabled, all DACs enabled
-  dac_write_reg(HV_DAC_GAIN, 0x00FF);     // set gain to 1
-  //dac_write_reg(HV_DAC_TRIGGER, 0x0008);  // set trigger to 0
-  //dac_clear_output();
+
+  dac_write_reg(HV_DAC_TRIGGER, 0x000A);  // soft reset DAC
+  dac_write_reg(HV_DAC_SYNC, 0x0000);     // set device to async mode
+  dac_write_reg(HV_DAC_CONFIG, 0x0000);   // no CRC, DO enabled, all DACs enabled, dissable internal VREF
+  dac_write_reg(HV_DAC_GAIN, 0x01FF);     // set gain to 2 and ref to 1/2 divider
 
   // intialize each leg control object
   leg_1.begin();
@@ -137,39 +153,71 @@ void setup() {
   leg_2.setMode(0);
   leg_3.setMode(0);
   leg_4.setMode(0);
+
+  // command functions
+
+  serialCmd.addCommand("on", enable_robot);              // starts sending telemetry
+  serialCmd.addCommand("off", disable_robot);              // starts sending telemetry
+  serialCmd.addCommand("help",help);
 }
 
 void loop() 
 {
 
+
 // run code here
   if(loopTimeElapsed > loop_period)
   {
-    Serial.print(">Lift:");
-    Serial.println(leg_1_lift);
-    Serial.print(">Swing:");
-    Serial.println(leg_1_swing);
-    // reset loop timer
+    
+    serialCmd.readSerial();
     loopTimeElapsed = 0;
 
-    // run each leg controller and get the new lift/swing values
-    leg_1.run(&leg_1_lift, &leg_1_swing, true);
-    leg_2.run(&leg_2_lift, &leg_2_swing, true);
-    leg_3.run(&leg_3_lift, &leg_3_swing, true);
-    leg_4.run(&leg_4_lift, &leg_4_swing, true);
+    if(robot_enabled)
+    {
+      // run each leg controller and get the new lift/swing values
+      leg_1.run(&leg_1_lift, &leg_1_swing, true);
+      leg_2.run(&leg_2_lift, &leg_2_swing, true);
+      leg_3.run(&leg_3_lift, &leg_3_swing, true);
+      leg_4.run(&leg_4_lift, &leg_4_swing, true);
+      // write the new values to the DAC
+      dac_set_output(0, leg_1_lift);
+      dac_set_output(1, leg_1_swing);
+      dac_set_output(2, leg_2_lift);
+      dac_set_output(3, leg_2_swing);
+      dac_set_output(4, leg_3_lift);
+      dac_set_output(5, leg_3_swing);
+      dac_set_output(6, leg_4_lift);
+      dac_set_output(7, leg_4_swing);
 
-    // write the new values to the DAC
-    dac_set_output(0, leg_1_lift);
-    //dac_set_output(1, leg_1_swing);
-    //dac_set_output(2, leg_2_lift);
-    //dac_set_output(3, leg_2_swing);
-    //dac_set_output(4, leg_3_lift);
-    //dac_set_output(5, leg_3_swing);
-    //dac_set_output(6, leg_4_lift);
-    //dac_set_output(7, leg_4_swing);
-    //dac_write_reg(HV_DAC_TRIGGER, 0x0008);  // set trigger to 0
-  }
+    }
+    else
+    {
+      rainbowCycle(10);
+    }
+    }
 
+}
+
+void help()
+{
+    Serial.println("\nMSG  >> Available Commands:");
+     Serial.println("--------------------------------------------------------------------------------------------------------");
+    Serial.println("#)      <command>               <argument 1/2/3..N>            <Description>");
+    Serial.println("1)      <on>                                               : turn on robot");
+    Serial.println("2)      <off>                                              : turn off robot");
+}
+
+void enable_robot(void)
+{
+  robot_enabled = true;
+  hv_enable();
+
+}
+
+void disable_robot(void)
+{
+  robot_enabled = false;
+  hv_disable();
 }
 
 void hv_enable(void)
@@ -177,9 +225,9 @@ void hv_enable(void)
   mcp_hv.digitalWrite(HV_CP_EN_0, HIGH);
 
   mcp_hv.digitalWrite(HV_CS_0, LOW);
-  SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
-  SPI.transfer16(0x00F4);
-  //SPI.transfer16(0x00E4);
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  //SPI.transfer16(0x00F4);
+  SPI.transfer16(0x00E4);
   SPI.endTransaction();
   mcp_hv.digitalWrite(HV_CS_0, HIGH);
 
@@ -189,10 +237,9 @@ void hv_disable(void)
 {
   // disable the charge pump
   mcp_hv.digitalWrite(HV_CP_EN_0, LOW);
-
   // enable the DC-DC converter
   mcp_hv.digitalWrite(HV_CS_0, LOW);
-  SPI.beginTransaction(SPISettings(10000000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   //SPI.transfer16(0x00F4);
   //SPI.transfer16(0x00E4);
   SPI.transfer16(0x00FA); // shutdown converter
@@ -225,12 +272,9 @@ void dac_write_reg(uint8_t addr, uint16_t value)
   dac_value = value;
   dac_cmd = 0x0F & (addr);
 
-  //Serial.print("DAC write command: ");
-  //Serial.println(dac_cmd,HEX);
-
   mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
   //mcp_bottom.digitalWrite(DAC_CS, LOW);
-  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
   SPI.transfer(dac_cmd);
   SPI.transfer16(dac_value);
   SPI.endTransaction();
@@ -241,20 +285,21 @@ void dac_write_reg(uint8_t addr, uint16_t value)
 uint16_t dac_read_reg(uint8_t addr)
 {
 
-  uint16_t dac_value = 0;
+  uint32_t dac_value = 0;
   uint8_t dac_cmd = 0;
 
   dac_cmd = 0x80 | (addr & 0x0F);     // make sure the upper nibble is zero
 
-  Serial.print("DAC read command: ");
-  Serial.println(dac_cmd,HEX);
+  //Serial.print("DAC read command: ");
+  //Serial.println(dac_cmd,HEX);
 
   // send the dac command and read back the value
   mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
   //mcp_bottom.digitalWrite(DAC_CS, LOW);
-  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
   SPI.transfer(dac_cmd);
-  dac_value = SPI.transfer16(0x0000);
+  SPI.transfer16(0x0000);
+  dac_value = SPI.transfer32(0x00000000);
   SPI.endTransaction();
   //mcp_bottom.digitalWrite(DAC_CS, HIGH);
   mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
@@ -265,14 +310,16 @@ uint16_t dac_read_reg(uint8_t addr)
 
 void dac_set_output(uint8_t channel, uint16_t value)
 {
-  uint16_t dac_value = 0xFFFF & value;
+  // bit shift the data to align with MSB
+  value <<= 4;
+  //value &= 0xFFF0;
 
   mcp_hv.digitalWrite(HV_DAC_CS_0, LOW);
   //mcp_bottom.digitalWrite(DAC_CS, LOW);
-  SPI.beginTransaction(SPISettings(100000, MSBFIRST, SPI_MODE0));
-  SPI.transfer(channel);
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE1));
+  SPI.transfer(HV_DAC_DAC_BASE_ADDR + channel);
   //SPI.transfer16(dac_value);
-  SPI.transfer16(dac_value);
+  SPI.transfer16(value);
   SPI.endTransaction();
   //mcp_bottom.digitalWrite(DAC_CS, HIGH);
   mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
@@ -280,6 +327,7 @@ void dac_set_output(uint8_t channel, uint16_t value)
 
 void dac_clear_output(void)
 {
+
   dac_set_output(0, 0x0000);
   dac_set_output(1, 0x0000);
   dac_set_output(2, 0x0000);
@@ -288,4 +336,34 @@ void dac_clear_output(void)
   dac_set_output(5, 0x0000);
   dac_set_output(6, 0x0000);
   dac_set_output(7, 0x0000);
+
+}
+
+// Input a value 0 to 255 to get a color value.
+// The colours are a transition r - g - b - back to r.
+uint32_t Wheel(byte WheelPos) {
+  WheelPos = 255 - WheelPos;
+  if(WheelPos < 85) {
+    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
+  }
+  if(WheelPos < 170) {
+    WheelPos -= 85;
+    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
+  }
+  WheelPos -= 170;
+  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
+}
+
+
+// Slightly different, this makes the rainbow equally distributed throughout
+void rainbowCycle(uint8_t wait) {
+  uint16_t i, j;
+
+  for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
+    for(i=0; i< strip.numPixels(); i++) {
+      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
+    }
+    strip.show();
+    delay(wait);
+  }
 }
