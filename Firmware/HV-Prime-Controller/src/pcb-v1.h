@@ -76,7 +76,7 @@
 // Power + Control devices
 
 #define GPIO_TOP_ADDR       0x26
-#define GPIO_BOTTOM_ADDR    0x27
+#define GPIO_BOTTOM_ADDR    0x20 // address for my PCB        //0x27
 #define ADC_ADDR            0x48
 #define PWR_MONITOR_ADDR    0x48
 

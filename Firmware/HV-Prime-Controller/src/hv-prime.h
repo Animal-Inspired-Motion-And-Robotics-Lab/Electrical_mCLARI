@@ -29,7 +29,7 @@
 #define HV_ADH_EN_0            6
 #define HV_ADH_EN_1            7
 #define HV_ADH_EN_2            8
-#define HV_ADC_EN_3            9
+#define HV_ADH_EN_3            9
 #define HV_CS_0                10
 #define HV_CP_EN_0             11
 #define HV_DAC_CS_0            12

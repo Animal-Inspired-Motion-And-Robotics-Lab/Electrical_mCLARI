@@ -32,7 +32,8 @@ void dac_clear_output(void);
 // hv functions 
 void hv_disable(void);
 void hv_enable(void);
-
+void enable_electroadhesion(void);
+void disable_electroadhesion(void);
 // command functions
 SerialCommand serialCmd;
 
@@ -137,6 +138,16 @@ void setup() {
   mcp_hv.digitalWrite(HV_DAC_CS_0, HIGH);
   // clear output of all channels
 
+  mcp_hv.pinMode(HV_ADH_EN_0, OUTPUT);
+  mcp_hv.digitalWrite(HV_ADH_EN_0, LOW);
+  mcp_hv.pinMode(HV_ADH_EN_1, OUTPUT);
+  mcp_hv.digitalWrite(HV_ADH_EN_1, LOW);
+  mcp_hv.pinMode(HV_ADH_EN_2, OUTPUT);
+  mcp_hv.digitalWrite(HV_ADH_EN_2, LOW);
+  mcp_hv.pinMode(HV_ADH_EN_3, OUTPUT);
+  mcp_hv.digitalWrite(HV_ADH_EN_3, LOW);
+
+
   dac_write_reg(HV_DAC_TRIGGER, 0x000A);  // soft reset DAC
   dac_write_reg(HV_DAC_SYNC, 0x0000);     // set device to async mode
   dac_write_reg(HV_DAC_CONFIG, 0x0000);   // no CRC, DO enabled, all DACs enabled, dissable internal VREF
@@ -159,6 +170,8 @@ void setup() {
   serialCmd.addCommand("on", enable_robot);              // starts sending telemetry
   serialCmd.addCommand("off", disable_robot);              // starts sending telemetry
   serialCmd.addCommand("help",help);
+  serialCmd.addCommand("enable_electro",enable_electroadhesion); // toggles electroadhesion channels
+  serialCmd.addCommand("disable_electro",disable_electroadhesion); // toggles electroadhesion channels
 }
 
 void loop() 
@@ -190,10 +203,10 @@ void loop()
       dac_set_output(7, leg_4_swing);
 
     }
-    else
-    {
-      rainbowCycle(10);
-    }
+    // else
+    // {
+    //   rainbowCycle(10);
+    // }
     }
 
 }
@@ -205,10 +218,14 @@ void help()
     Serial.println("#)      <command>               <argument 1/2/3..N>            <Description>");
     Serial.println("1)      <on>                                               : turn on robot");
     Serial.println("2)      <off>                                              : turn off robot");
-}
+    Serial.println("3)      <enable_electro>                                           : enables electroadhesion channels");
+    Serial.println("4)      <disable_electro>                                           : disables electroadhesion channels");
+  
+  }
 
 void enable_robot(void)
 {
+  Serial.println("Enabling HV supply");
   robot_enabled = true;
   hv_enable();
 
@@ -216,10 +233,30 @@ void enable_robot(void)
 
 void disable_robot(void)
 {
+  Serial.println("Disabling HV supply");
   robot_enabled = false;
   hv_disable();
 }
 
+void enable_electroadhesion(void)
+{
+  mcp_hv.digitalWrite(HV_ADH_EN_0, LOW);
+  mcp_hv.digitalWrite(HV_ADH_EN_1, LOW);
+  mcp_hv.digitalWrite(HV_ADH_EN_2, LOW);
+  mcp_hv.digitalWrite(HV_ADH_EN_3, LOW);
+  Serial.println("Electroadhesion enabled");
+
+
+}
+
+void disable_electroadhesion(void)
+{
+  mcp_hv.digitalWrite(HV_ADH_EN_0, HIGH);
+  mcp_hv.digitalWrite(HV_ADH_EN_1, HIGH);
+  mcp_hv.digitalWrite(HV_ADH_EN_2, HIGH);
+  mcp_hv.digitalWrite(HV_ADH_EN_3, HIGH);
+  Serial.println("Electroadhesion disabled");
+}
 void hv_enable(void)
 {
   mcp_hv.digitalWrite(HV_CP_EN_0, HIGH);
