@@ -34,6 +34,7 @@ void hv_disable(void);
 void hv_enable(void);
 void enable_electroadhesion(void);
 void disable_electroadhesion(void);
+void read_hv(void);
 // command functions
 SerialCommand serialCmd;
 
@@ -172,6 +173,7 @@ void setup() {
   serialCmd.addCommand("help",help);
   serialCmd.addCommand("enable_electro",enable_electroadhesion); // toggles electroadhesion channels
   serialCmd.addCommand("disable_electro",disable_electroadhesion); // toggles electroadhesion channels
+  serialCmd.addCommand("read",read_hv); // reads the HV TX register
 }
 
 void loop() 
@@ -218,9 +220,9 @@ void help()
     Serial.println("#)      <command>               <argument 1/2/3..N>            <Description>");
     Serial.println("1)      <on>                                               : turn on robot");
     Serial.println("2)      <off>                                              : turn off robot");
-    Serial.println("3)      <enable_electro>                                           : enables electroadhesion channels");
-    Serial.println("4)      <disable_electro>                                           : disables electroadhesion channels");
-  
+    Serial.println("3)      <enable_electro>                                   : enables electroadhesion channels");
+    Serial.println("4)      <disable_electro>                                  : disables electroadhesion channels");
+    Serial.println("5)      <read>                                             : reads TX register from HV56020");
   }
 
 void enable_robot(void)
@@ -264,7 +266,7 @@ void hv_enable(void)
   mcp_hv.digitalWrite(HV_CS_0, LOW);
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
   //SPI.transfer16(0x00F4);
-  SPI.transfer16(0x00E4);
+  SPI.transfer16(0x00A4);
   SPI.endTransaction();
   mcp_hv.digitalWrite(HV_CS_0, HIGH);
 
@@ -277,13 +279,26 @@ void hv_disable(void)
   // enable the DC-DC converter
   mcp_hv.digitalWrite(HV_CS_0, LOW);
   SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
-  //SPI.transfer16(0x00F4);
-  //SPI.transfer16(0x00E4);
-  SPI.transfer16(0x00FA); // shutdown converter
+  SPI.transfer16(0x00AA); // shutdown converter
   SPI.endTransaction();
   mcp_hv.digitalWrite(HV_CS_0, HIGH);
 
 }
+
+void read_hv(void)
+{
+  uint16_t reg_value = 0;
+
+  mcp_hv.digitalWrite(HV_CS_0, LOW);
+  SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+  reg_value = SPI.transfer16(0x00EA); // shutdown converter
+  SPI.endTransaction();
+  mcp_hv.digitalWrite(HV_CS_0, HIGH);
+
+  Serial.print("HV Register Value: 0x");
+  Serial.println(reg_value, HEX);
+}
+
 
 void dac_print(void)
 {
@@ -374,33 +389,4 @@ void dac_clear_output(void)
   dac_set_output(6, 0x0000);
   dac_set_output(7, 0x0000);
 
-}
-
-// Input a value 0 to 255 to get a color value.
-// The colours are a transition r - g - b - back to r.
-uint32_t Wheel(byte WheelPos) {
-  WheelPos = 255 - WheelPos;
-  if(WheelPos < 85) {
-    return strip.Color(255 - WheelPos * 3, 0, WheelPos * 3);
-  }
-  if(WheelPos < 170) {
-    WheelPos -= 85;
-    return strip.Color(0, WheelPos * 3, 255 - WheelPos * 3);
-  }
-  WheelPos -= 170;
-  return strip.Color(WheelPos * 3, 255 - WheelPos * 3, 0);
-}
-
-
-// Slightly different, this makes the rainbow equally distributed throughout
-void rainbowCycle(uint8_t wait) {
-  uint16_t i, j;
-
-  for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
-    }
-    strip.show();
-    delay(wait);
-  }
 }
